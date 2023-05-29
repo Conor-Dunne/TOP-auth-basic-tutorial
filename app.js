@@ -4,6 +4,7 @@ const session = require("express-session");
 const passport = require("passport");
 const LocalStrategy = require("passport-local").Strategy;
 const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs"); 
 const Schema = mongoose.Schema;
 
 // Load environment variables from .env file
@@ -41,10 +42,15 @@ passport.use(
             if(!user) {
                 return done(null, false, { message: "Incorrect username"});
             };
-            if (user.password !== password) {
-                return done(null , false, { message: "Incorrect password"});
-            };
-            return done(null, user);
+            bcrypt.compare(password, user.password, (err, res) => {
+              if (res) {
+                // passwords match! log user in
+                return done(null, user)
+              } else {
+                // passwords do not match!
+                return done(null, false, { message: "Incorrect password" })
+              }
+            })
         } catch(err) {
             return done(err);
         };
@@ -68,6 +74,10 @@ app.use(session({secret: "cats", resave: false, saveUninitialized: true}));
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(express.urlencoded({extended: false}));
+app.use(function(req, res, next) {
+  res.locals.currentUser = req.user;
+  next();
+});
 
 app.get("/", (req, res) => {
     console.log(req.user)
@@ -86,12 +96,19 @@ app.get("/log-out", (req, res, next) => {
 
 app.post("/sign-up", async (req, res, next) => {
     try {
-      const user = new User({
-        username: req.body.username,
-        password: req.body.password
-      });
-      const result = await user.save();
-      res.redirect("/");
+
+      bcrypt.hash(req.body.password, 10 , async (err, hashedpassword) => {
+        if(err) {
+          return next(err);
+        }
+        const user = new User({
+          username: req.body.username,
+          password: hashedpassword
+        });
+        const result = await user.save();
+        res.redirect("/");
+      }) 
+
     } catch(err) {
       return next(err);
     };
